@@ -34,6 +34,15 @@ DEBUG = 1
 
 '''
 
+def safeInt(s):
+	try:
+		s = s.replace(',','')
+		s = s.split('.')[0]
+		i = int(s)
+		return i
+	except ValueError:
+		return s
+
 nationalities = {
 	14:'Australia',
 	29:'Brazil',
@@ -70,20 +79,20 @@ def api(make, model, year):
 		modelFeatures = pq(url=url)
 		
 		for highlight in modelFeatures("#highlights-pod .data-table li").items():
-			if DEBUG: print 
-	 		if DEBUG: print highlight.html()
+# 			if DEBUG: print 
+# 	 		if DEBUG: print highlight.html()
 			span = highlight("span").text()
-			if DEBUG: print 'span:',span
+# 			if DEBUG: print 'span:',span
 			
 			if "CAR TYPE" in span:
 				type = highlight("em").text().strip().upper()
 				if DEBUG: print 'found type',type
 		
 		for feature in modelFeatures(".feature-spec .items td").items():
-	 		if DEBUG: print 
-	 		if DEBUG: print feature.html()
+# 	 		if DEBUG: print 
+# 	 		if DEBUG: print feature.html()
 			label = feature("label").text()
-	 		if DEBUG: print 'label:',label
+# 	 		if DEBUG: print 'label:',label
 			
 			if "CURB WEIGHT" in label:
 				curbWeight = feature("span").text()
@@ -119,8 +128,8 @@ def getMakeModelInfo(makeModel):
 			
 			modelPage = pq(url=link)
 			for modelYear in modelPage('.model-year-summary').items():
-				if DEBUG: print 
-				if DEBUG: print modelYear.html()
+# 				if DEBUG: print 
+# 				if DEBUG: print modelYear.html()
 				
 				year         = modelYear('.summary-year').text().strip()
 				yearAvg      = modelYear('.summary-avg').text().split(' ')[0]
@@ -150,8 +159,8 @@ def getMakeModelInfo(makeModel):
 					modelYearListing = pq(link)
 				
 					for ownerCar in modelYearListing('.browse-by-vehicle-display').items():
-						if DEBUG: print 
-						if DEBUG: print ownerCar.html()
+# 						if DEBUG: print 
+# 						if DEBUG: print ownerCar.html()
 						
 						#sample model year item
 						'''
@@ -173,10 +182,7 @@ def getMakeModelInfo(makeModel):
 						ownerLink = ownerCar('.browse-by-vehicle-display').attr('data-clickable')
 						country = ownerCar('.browse-details p:last a img').attr('src')
 						country = countryRE.findall(country)[0]
-						try:
-							country = int(country)
-						except ValueError:
-							pass
+						country = safeInt(country)
 						country = nationalities.get(country, country)
 						
 						# get detail location from user page
@@ -187,8 +193,10 @@ def getMakeModelInfo(makeModel):
 						
 						engineSize = engineRE.findall(engineAndTransmission)
 						if engineSize:
+							engineSize = engineSize[0].strip()
 							if "L" in engineSize: engineSize = engineSize[0].strip().replace('L','')
-						
+						else:
+							engineSize = ''
 						fuel = fuelRE.findall(engineAndTransmission)
 						if fuel:
 							fuel = fuel[0]
@@ -201,7 +209,9 @@ def getMakeModelInfo(makeModel):
 							transmission = transmission[0]
 							if "Automatic CVT" in transmission: transmission = "AV"
 							elif "Standard" in transmission:    transmission = "M"+transmission.strip().split(' ')[1]
-							elif "Automatic" in transmission:   transmission = "A"+transmission.strip().split(' ')[1]
+							elif "Automatic" in transmission:   transmission = "A"+transmission.strip().split(' ')[-1]
+						else:
+							transmission = ''
 						
 						location      = ownerPage('.vehicle-info p:last .show .text-muted').text().strip()
 						avgMpg        = ownerPage('.basic-stats.average-mileage .stat-item strong').text()
@@ -212,6 +222,7 @@ def getMakeModelInfo(makeModel):
 						
 						avgCostGallon = decimalRE.findall(avgCostGallon)[0]
 	 					miles         = ownerPage('.total-miles-digits li').text().replace(' ','')
+	 					miles         = safeInt(miles)
 		
 						#store data for this user vehicle entry
 						ownerModelInfo.append({'year':year, 'make':makeName, 'model':modelName, 
@@ -263,15 +274,30 @@ def scrape(url, destination):
  	for index, makeModel in makeModelsDF.iterrows():
  		model, owner = getMakeModelInfo(makeModel)
  		if model is not None:
-	 		makeModelInfo.extend(model)
-	 		ownerModelInfo.extend(owner)
+ 			#display incremental results as each model is processed and save them incase something crash's
+ 			try:
+		 		df1 = DataFrame(model)
+		 		df2 = DataFrame(owner)
+		 		if DEBUG: print df1.head()
+			 	if DEBUG: print df2.head()
+	 		except:
+	 			print 'error dataframing ',makeModel['makeName'], makeModel['modelName']
+	 		try:
+	 			df1.to_csv(destination+'-make-model-info-'+`index`+'.csv')
+		 		df2.to_csv(destination+'-owner-model-info-'+`index`+'.csv')
+ 			except:
+ 				print 'error csv without utf-8 encoding ',makeModel['makeName'], makeModel['modelName']
+	 		try:
+	 			df1.to_csv(destination+'-make-model-info-'+`index`+'-utf8.csv', encoding='utf-8')
+		 		df2.to_csv(destination+'-owner-model-info-'+`index`+'-utf8.csv',encoding='utf-8')
+ 			except:
+ 				print 'error csv WITH utf-8 encoding ',makeModel['makeName'], makeModel['modelName']
+		 	try:
+		 		makeModelInfo.extend(model)
+		 		ownerModelInfo.extend(owner)
+	 		except:
+	 			print 'error extending ', makeModel['makeName'], makeModel['modelName']
 	 		
-	 		if DEBUG:
-		 		df1 = DataFrame(makeModelInfo)
-		 		df2 = DataFrame(ownerModelInfo)
-		 		print df1.head()
-		 		print df2.head()
- 	
  	if DEBUG: print
  	if DEBUG: print 'makeModelInfo', len(makeModelInfo)
  	if DEBUG: print 'ownerModelInfo', len(ownerModelInfo)
