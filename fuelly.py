@@ -34,68 +34,196 @@ DEBUG = 1
 
 '''
 
-
 nationalities = {
-				14:'Australia',
-				29:'Brazil',
-				36:'Canada',
-				46:'China',
-				86:'Greece',
-				99:'Ireland',
-				152:'Mexico',
-				153:'Maylasia',
-				162:'Norway',
-				166:'New Zealand',
-				179:'Portugal',
-				210:'Thailand',
-				217:'Turkey',
-				220:'Taiwan',
-				222:'Ukraine',
-				224:'United Kingdom',
-				226:'United States',
-				241:'South Africa',
-				}
+	14:'Australia',
+	29:'Brazil',
+	36:'Canada',
+	46:'China',
+	86:'Greece',
+	99:'Ireland',
+	152:'Mexico',
+	153:'Maylasia',
+	162:'Norway',
+	166:'New Zealand',
+	179:'Portugal',
+	210:'Thailand',
+	217:'Turkey',
+	220:'Taiwan',
+	222:'Ukraine',
+	224:'United Kingdom',
+	226:'United States',
+	241:'South Africa'
+	}
 
-epaRE = re.compile('(d+)/(d+) mpg',flags=re.IGNORECASE)
-curbWeightRE = re.compile('(d+) lbs\.',flags=re.IGNORECASE)
-horespowerRE = re.compile('(d+) hp @',flags=re.IGNORECASE)	
+curbWeightRE = re.compile('(\d+) lbs',flags=re.IGNORECASE)
+horsepowerRE = re.compile('(\d+).*hp.*',flags=re.IGNORECASE)	
 def api(make, model, year):
 	model = model.strip().replace(" ", "-")
 	
-	epa = ['','']
 	type = ''
 	curbWeight = ''
 	horespower = ''
+	url="http://www.edmunds.com/"+make+"/"+model+"/"+year+"/features-specs/"
 	
 	try:
-		modelFeatures = pq(url="http://www.edmunds.com/"+make+"/"+model+"/"+year+"/features-specs/")
-		for feature in modelFeatures(".feature-spec .items td").items():
-	# 		if DEBUG: print 
-	# 		if DEBUG: print feature.html()
-			label = feature("label").text()
-	# 		if DEBUG: print 'label',label
+		if DEBUG: print '\n\tedmunds api call to',url
+		modelFeatures = pq(url=url)
+		
+		for highlight in modelFeatures("#highlights-pod .data-table li").items():
+			if DEBUG: print 
+	 		if DEBUG: print highlight.html()
+			span = highlight("span").text()
+			if DEBUG: print 'span:',span
 			
-			if "EPA MILEAGE EST. (CTY/HWY)" in label:
-				epa = feature("span").text()
-				if DEBUG: print 'found epa',epa,epaRE.findall(epa)
-				epa = epaRE.findall(epa)
-			elif "CAR TYPE" in label:
-				type = feature("span").text().strip()
+			if "CAR TYPE" in span:
+				type = highlight("em").text().strip().upper()
 				if DEBUG: print 'found type',type
-			elif "CURB WEIGHT" in label:
+		
+		for feature in modelFeatures(".feature-spec .items td").items():
+	 		if DEBUG: print 
+	 		if DEBUG: print feature.html()
+			label = feature("label").text()
+	 		if DEBUG: print 'label:',label
+			
+			if "CURB WEIGHT" in label:
 				curbWeight = feature("span").text()
 				if DEBUG: print 'found curb weight',curbWeight,curbWeightRE.findall(curbWeight)
-				curbWeight = curbWeightRE.findall(curbWeight)
+				curbWeight = curbWeightRE.findall(curbWeight)[0]
 			elif "HORSEPOWER" in label:
 				horsepower = feature("span").text()
 				if DEBUG: print 'found horsepower',horsepower,horsepowerRE.findall(horsepower)
-				horespower = horsepowerRE.findall(horsepower)
+				horsepower = horsepowerRE.findall(horsepower)[0]
 			
-		print epa[0], epa[1], type, curbWeight, horespower 
+		if DEBUG: print 'type:',type, 'curbWeight:',curbWeight, 'horespower',horsepower 
 	except:
 		if DEBUG: print '\n\tedmunds api error'
 	
-	return epa[0], epa[1], type, curbWeight, horespower 
+	return type, curbWeight, horsepower 
+
+engineRE = re.compile('(\d\.*\d*L).*[FLEX|GAS|DIESEL|CNG]',flags=re.IGNORECASE)
+fuelRE = re.compile('(FLEX|GAS|DIESEL|CNG)',flags=re.IGNORECASE)
+transRE = re.compile('(Automatic.* \d|Standard \d|Automatic CVT)',flags=re.IGNORECASE)
+countryRE     = re.compile('/(\d+)\..*',flags=re.IGNORECASE)
+commaDigitsRE = re.compile('(\d*,*\d+) Fuel-ups',flags=re.IGNORECASE)
+decimalRE     = re.compile('(\d*\.*\d+)',flags=re.IGNORECASE)
+def getMakeModelInfo(makeModel):
+		try:
+			makeName = makeModel['makeName']
+			modelName = makeModel['modelName']
+			link = makeModel['link']
+			if DEBUG: print link
+			print 'retrieving:',makeName, modelName
+				
+			makeModelInfo  = []
+			ownerModelInfo = []
+			
+			modelPage = pq(url=link)
+			for modelYear in modelPage('.model-year-summary').items():
+				if DEBUG: print 
+				if DEBUG: print modelYear.html()
+				
+				year         = modelYear('.summary-year').text().strip()
+				yearAvg      = modelYear('.summary-avg').text().split(' ')[0]
+				yearOwners   = modelYear('.summary-total').text().strip().split(' ')[0].replace(",", "")
+				yearFuelups  = modelYear('.summary-fuelups').text().strip().split(' ')[0].replace(",", "")
+				yearMiles    = modelYear('.summary-miles').text().strip().split(' ')[0].replace(",", "")
+				yearLink     = modelYear('.summary-view-all-link a').attr('href')
+				
+# 				if yearFuelups < threshold and yearMiles < threshold: return None, None
+				
+				#get model specific info from edmunds api
+				type, weight, hp = api(makeName, modelName, year)
+	
+				#store data for this make model and year
+				makeModelInfo.append({'year':year, 'make':makeName, 'model':modelName, 
+									'type':type, 'weight':weight, 'horsepower':hp,
+									'avgMpg':yearAvg, 'fuelups':yearFuelups, 
+									'owners':yearOwners,'miles':yearMiles, 'link':yearLink})
+				
+				modelYearListing = pq(yearLink)
+				
+				pages = [yearLink]
+				for link in modelYearListing('.pagination li a').items():
+					pages.append(link.attr('href'))
+					
+				for link in pages:
+					modelYearListing = pq(link)
+				
+					for ownerCar in modelYearListing('.browse-by-vehicle-display').items():
+						if DEBUG: print 
+						if DEBUG: print ownerCar.html()
+						
+						#sample model year item
+						'''
+						<ul class="browse-by-vehicle-display" data-clickable="http://www.fuelly.com/car/abarth/500/2014/deathstalker/285920" style="cursor: pointer;">
+							<li class="browse-image car" style="background-image:url('/photos/000099/r1/15397b5e37028a4.33780631.jpg')">	 </li>
+							<li class="browse-details">
+								<h4>Bianca</h4>
+								<p><strong>2014 Abarth 500  GAS L4 <br><span class="date">Added May 2014</span> - 23 <span>Fuel-ups</span></strong></p>
+								<p>Property of <a href="http://www.fuelly.com/driver/deathstalker" class="profile-link"><span class="fy-icon-avatar"></span> Deathstalker <img src="/img/badges/countries/226.gif"></a></p>
+							</li>
+							<li class="browse-performance ">
+								<div class="vertical-stat">	
+								 
+									<strong>38.2</strong> <em>Avg MPG</em>
+								</div>
+							</li>
+						</ul>
+						'''
+						ownerLink = ownerCar('.browse-by-vehicle-display').attr('data-clickable')
+						country = ownerCar('.browse-details p:last a img').attr('src')
+						country = countryRE.findall(country)[0]
+						try:
+							country = int(country)
+						except ValueError:
+							pass
+						country = nationalities.get(country, country)
+						
+						# get detail location from user page
+						ownerPage = pq(ownerLink)
+						
+						# get engine size, fuel ups, avg mpg
+						engineAndTransmission = ownerPage('.vehicle-info .extended_desc small').text()
+						
+						engineSize = engineRE.findall(engineAndTransmission)
+						if engineSize:
+							if "L" in engineSize: engineSize = engineSize[0].strip().replace('L','')
+						
+						fuel = fuelRE.findall(engineAndTransmission)
+						if fuel:
+							fuel = fuel[0]
+							if "DIESEL" in fuel: fuel = "D"
+							elif "GAS" in fuel:  fuel = "X"
+							elif "CNG" in fuel:  fuel = "N"
+						
+						transmission = transRE.findall(engineAndTransmission)
+						if transmission:
+							transmission = transmission[0]
+							if "Automatic CVT" in transmission: transmission = "AV"
+							elif "Standard" in transmission:    transmission = "M"+transmission.strip().split(' ')[1]
+							elif "Automatic" in transmission:   transmission = "A"+transmission.strip().split(' ')[1]
+						
+						location      = ownerPage('.vehicle-info p:last .show .text-muted').text().strip()
+						avgMpg        = ownerPage('.basic-stats.average-mileage .stat-item strong').text()
+						avgCostGallon = ownerPage('.vehicle-costs-list-item.js-average-cost .js-cost-analysis-value').text()
+	# 					avgCostFillup = ownerPage('.vehicle-costs-list-item.js-average-fillup .js-cost-analysis-value').text()
+	# 					avgCostMile   = ownerPage('.vehicle-costs-list-item.js-average-mile .js-cost-analysis-value').text()
+						fuelUpsCount  = ownerPage('.total-fuelups-count').text().strip().replace(',','')
+						
+						avgCostGallon = decimalRE.findall(avgCostGallon)[0]
+	 					miles         = ownerPage('.total-miles-digits li').text().replace(' ','')
+		
+						#store data for this user vehicle entry
+						ownerModelInfo.append({'year':year, 'make':makeName, 'model':modelName, 
+												'class':type, 'fuel':fuel, 'weight':weight, 'horsepower':hp,
+												'engineSize':engineSize, 'transmission':transmission,
+												'avgMpg':avgMpg, 'country':country, 'location':location,
+												'fuelups':fuelUpsCount, 'avgCostGallon':avgCostGallon, 'miles':miles })
+					
+				return makeModelInfo, ownerModelInfo
+	
+ 		except:
+ 			return None, None
 	
 def scrape(url, destination):
 	
@@ -106,7 +234,7 @@ def scrape(url, destination):
 		if DEBUG: print '\n\tHTTP 404'
 		return
 	
-	makeRE = re.compile('http://www.fuelly.com/car/(.*)/',flags=re.IGNORECASE)
+	makeRE  = re.compile('http://www.fuelly.com/car/(.*)/',flags=re.IGNORECASE)
 	countRE = re.compile('</a> \((.*)\)',flags=re.IGNORECASE)
 	
  	makeModels = []
@@ -128,109 +256,41 @@ def scrape(url, destination):
  	makeModelsDF = makeModelsDF.sort(columns='count',ascending=False)
  	
  	#just do small test set
- 	if DEBUG: makeModelsDF = makeModelsDF.head()
-	
-	def getMakeModelInfo(makeModel):
-		try:
-			makeName = makeModel['makeName']
-			modelName = makeModel['modelName']
-			link = makeModel['link']
-			if DEBUG: print link
-			if DEBUG: print makeName
-			if DEBUG: print modelName
-			modelPage = pq(url=link)
-			for modelYear in modelPage('.model-year-summary').items():
-				if DEBUG: print 
-				if DEBUG: print modelYear.html()
-				year         = modelYear('.summary-year').text()
-				yearAvg      = modelYear('.summary-avg').text()
-# 				yearOwners   = modelYear('.summary-total').text()
-# 				yearFuelups  = modelYear('.summary-fuelups').text()
-# 				yearMiles    = modelYear('.summary-miles').text()
-				yearLink     = modelYear('.summary-view-all-link a').attr('href')
-				#get model info
-				
-				epaCity, epaHwy, typ, weight, hp = api(makeName, modelName, year)
-	
-				#store data for this make model and year
-				thisMakeModelInfo = {'year':year, 'make':makeName, 'model':modelName, 
-									'type':type, 'weight':weight, 'horsepower':hp,
-									'avg':yearAvg, 'fuelups':yearFuelups, 'link':yearLink}
-				
-				ownerMakeModelInfo = []
-				
-				modelYearListing = pq(yearLink)
-				
-				# TODO need to add pagination support here!!!!!!!
-				
-				for car in modelYearListing('.browse-by-vehicle-display').items():
-					if DEBUG: print 
-					if DEBUG: print car.html()
-					'''
-					<ul class="browse-by-vehicle-display" data-clickable="http://www.fuelly.com/car/abarth/500/2014/deathstalker/285920" style="cursor: pointer;">
-						<li class="browse-image car" style="background-image:url('/photos/000099/r1/15397b5e37028a4.33780631.jpg')">	 </li>
-						<li class="browse-details">
-							<h4>Bianca</h4>
-							<p><strong>2014 Abarth 500  GAS L4 <br><span class="date">Added May 2014</span> - 23 <span>Fuel-ups</span></strong></p>
-							<p>Property of <a href="http://www.fuelly.com/driver/deathstalker" class="profile-link"><span class="fy-icon-avatar"></span> Deathstalker <img src="/img/badges/countries/226.gif"></a></p>
-						</li>
-						<li class="browse-performance ">
-							<div class="vertical-stat">	
-							 
-								<strong>38.2</strong> <em>Avg MPG</em>
-							</div>
-						</li>
-					</ul>
-					'''
-					ownerLink = car('.browse-by-vehicle-display').attr('data-clickable')
-					nationality = car('.browse-details p:last a img').attr('src')
-					nationality = nationalities.get(nationality, nationality)
-					
-					# get detail location from user page
-					ownerPage = pq(ownerLink)
-					
-					# get engine size, fuel ups, avg mpg
-					engineSize    = ownerPage('.vehicle-info .extended_desc small').text()
-					location      = ownerPage('.vehicle-info p:last .show .text-muted').text()
-					avg           = ownerPage('.basic-stats.average-mileage .stat-item strong').text()
-					avgCostGallon = ownerPage('.vehicle-costs-list-item.js-average-cost .js-cost-analysis-value').text()
-# 					avgCostFillup = ownerPage('.vehicle-costs-list-item.js-average-fillup .js-cost-analysis-value').text()
-# 					avgCostMile   = ownerPage('.vehicle-costs-list-item.js-average-mile .js-cost-analysis-value').text()
-					fuelUpsCount  = ownerPage('.total-fuelups-count').text()
-# 					miles         = ownerPage('.total-miles-digits li').text().replace(' ','')
-	
-					#store data for this user vehidle entry
-					ownerMakeModelInfo.append({'year':year, 'make':makeName, 'model':modelName, 
-											'type':type, 'weight':weight, 'horsepower':hp,
-											'avg':avg, 'fuelups':fuelUpsCount, 'avgCostGallon':avgCostGallon,
-											'engineSize':engineSize, 'nationality':nationality, 'location':location})
-					
-				return thisMakeModelInfo, ownerMakeModelInfo
-	
- 		except:
- 			return None
- 		
- 	pool = Pool(processes=4)
- 	makeModelInfo, ownerModelInfo = pool.map(getMakeModelInfo, makeModels)
+ 	if DEBUG: makeModelsDF = makeModelsDF.head(10)
+ 	
+ 	makeModelInfo = []
+ 	ownerModelInfo = []
+ 	for index, makeModel in makeModelsDF.iterrows():
+ 		model, owner = getMakeModelInfo(makeModel)
+ 		if model is not None:
+	 		makeModelInfo.extend(model)
+	 		ownerModelInfo.extend(owner)
+	 		
+	 		if DEBUG:
+		 		df1 = DataFrame(makeModelInfo)
+		 		df2 = DataFrame(ownerModelInfo)
+		 		print df1.head()
+		 		print df2.head()
+ 	
  	if DEBUG: print
  	if DEBUG: print 'makeModelInfo', len(makeModelInfo)
  	if DEBUG: print 'ownerModelInfo', len(ownerModelInfo)
  	makeModelInfo  = filter(partial(is_not, None), makeModelInfo)
  	ownerModelInfo = filter(partial(is_not, None), ownerModelInfo)
  	
- 	if DEBUG: print 'ownerModelInfo missing nationalities', unique(ownerModelInfo['nationality'])
- 	
  	makeModelInfo = DataFrame(makeModelInfo)
 	if DEBUG: print
 	if DEBUG: print makeModelInfo
-	makeModelInfo.to_csv(destination+'make-model.csv')
-	if DEBUG: print '\nSaved make-model dataframe to csv'
+	makeModelInfo.to_csv(destination+'-make-model-info.csv')
+	print '\nSaved make-model dataframe to csv'
  	
  	ownerModelInfo = DataFrame(ownerModelInfo)
 	if DEBUG: print
 	if DEBUG: print ownerModelInfo
-	ownerModelInfo.to_csv(destination+'owner-model.csv')
-	if DEBUG: print '\nSaved owner-model dataframe to csv'
+	ownerModelInfo.to_csv(destination+'-owner-model-info.csv')
+	print '\nSaved owner-model dataframe to csv'
+ 	
+ 	if DEBUG: print 'ownerModelInfo missing nationalities', unique(ownerModelInfo['country'])
 				
 # -----------------------------------------------------------------------------
 
