@@ -1,4 +1,4 @@
-![SCREENSHOTS](https://raw.github.com/derekneil/fueleconomy/master/inprogress.png "In progress")
+![SCREENSHOTS](https://raw.github.com/derekneil/fueleconomy/master/mpg-vs-horsepower.png "mpg vs horsepower")
 
 ##Analytical Questions
 1. Does fuel economy continue to increase year over year for all makes and models?
