@@ -15,3 +15,5 @@ b. within a country (hilly vs. flat areas)
 - Still learning pandas and error-free web scrapping.
 - Statistical analysis easy to make assumptions
 ￼
+##Changes over time
+![SCREENSHOTS](https://raw.github.com/derekneil/fueleconomy/master/mpg-vs-horsepower-animated.gif "mpg vs horsepower animated")
